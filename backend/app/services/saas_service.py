@@ -76,13 +76,22 @@ def get_saas_settings(db: Session, settings: Settings | None = None) -> SaasSett
 
 
 def get_support_contact(db: Session) -> SupportContactResponse:
-    row = get_saas_settings(db)
-    return SupportContactResponse(
-        support_email=row.support_email,
-        support_phone=row.support_phone,
-        allow_self_activation=row.allow_self_activation,
-        enforce_subscription_expiry=row.enforce_subscription_expiry,
-    )
+    active_settings = get_settings()
+    try:
+        row = get_saas_settings(db, active_settings)
+        return SupportContactResponse(
+            support_email=row.support_email,
+            support_phone=row.support_phone,
+            allow_self_activation=row.allow_self_activation,
+            enforce_subscription_expiry=row.enforce_subscription_expiry,
+        )
+    except Exception:
+        return SupportContactResponse(
+            support_email=active_settings.support_email,
+            support_phone=active_settings.support_phone,
+            allow_self_activation=active_settings.allow_self_activation,
+            enforce_subscription_expiry=active_settings.enforce_subscription_expiry,
+        )
 
 
 def parse_notification_intervals(raw: str | None) -> list[int]:

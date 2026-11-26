@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.health import router as health_router
 from app.api.router import api_router
@@ -113,14 +115,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 def register_exception_handlers(app: FastAPI) -> None:
     """Register consistent JSON error handlers that never leak stack traces or secrets."""
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": {
                     "code": "http_error",
                     "message": exc.detail if isinstance(exc.detail, str) else "Request failed.",
+                }
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def database_exception_handler(_: Request, __: SQLAlchemyError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": {
+                    "code": "database_unavailable",
+                    "message": "Database connection is temporarily unavailable. Check DATABASE_URL configuration and try again.",
                 }
             },
         )

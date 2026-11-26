@@ -153,3 +153,19 @@ def test_supabase_storage_adapter_roundtrip_and_signed_url_endpoints(
     logo_signed = client.get("/api/v1/business/logo/signed-url")
     assert logo_signed.status_code == 200
     assert logo_signed.json()["url"] == "/api/v1/business/logo"
+
+
+def test_support_endpoint_falls_back_gracefully_when_db_unavailable(client: TestClient) -> None:
+    """/api/v1/saas/support should return configured support contact instead of 500 if DB is unreachable."""
+    from sqlalchemy.exc import OperationalError
+
+    with patch(
+        "app.services.saas_service.get_saas_settings",
+        side_effect=OperationalError("SELECT 1", {}, Exception("conn refused")),
+    ):
+        resp = client.get("/api/v1/saas/support")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "support_email" in data
+    assert "support_phone" in data
+
