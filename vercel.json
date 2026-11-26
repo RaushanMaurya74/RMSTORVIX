@@ -6,11 +6,5 @@
       "maxDuration": 60,
       "includeFiles": "{backend/**,frontend/**}"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index.py"
-    }
-  ]
+  }
 }
