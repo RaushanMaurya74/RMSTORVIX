@@ -1,0 +1,103 @@
+/* Centralized Design & Theme Tokens (Bright/Light & Dark Mode) */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Requested Semantic Theme Variables */
+  --bg-primary: #f5f7fb;
+  --bg-secondary: #eef2f8;
+  --surface: #ffffff;
+  --surface-hover: #f1f5f9;
+  --text-primary: #172033;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+  --primary-color: #2563eb;
+  --primary-color-hover: #1d4ed8;
+  --primary-color-soft: #eff6ff;
+  --primary-color-border: rgba(37, 99, 235, 0.22);
+  --input-background: #ffffff;
+  --sidebar-background: #ffffff;
+  --modal-background: #ffffff;
+  --overlay-backdrop: rgba(15, 23, 42, 0.48);
+  --invoice-paper-bg: #ffffff;
+
+  /* Backward-compatible token aliases */
+  --bg-base: var(--bg-primary);
+  --bg-surface: var(--surface);
+  --bg-subtle: var(--bg-secondary);
+  --text-muted: var(--text-secondary);
+  --accent-primary: var(--primary-color);
+  --accent-primary-hover: var(--primary-color-hover);
+  --accent-primary-soft: var(--primary-color-soft);
+  --border-default: var(--border-color);
+
+  /* Status tokens */
+  --state-error: #dc2626;
+  --state-error-hover: #b91c1c;
+  --state-error-soft: #fef2f2;
+  --state-error-border: rgba(220, 38, 38, 0.28);
+  --state-success: #16a34a;
+  --state-success-soft: #f0fdf4;
+  --state-success-border: rgba(22, 163, 74, 0.28);
+  --state-warning: #d97706;
+  --state-warning-soft: #fffbeb;
+  --state-warning-border: rgba(217, 119, 6, 0.3);
+
+  /* Typography */
+  --font-sans: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Layout & spacing */
+  --sidebar-width: 260px;
+  --topbar-height: 64px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Shape & elevation */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.05);
+  --shadow-md: 0 6px 20px rgba(23, 32, 51, 0.09);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-primary: #0b1120;
+  --bg-secondary: #1e293b;
+  --surface: #111827;
+  --surface-hover: #1f2937;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border-color: #293548;
+  --primary-color: #3b82f6;
+  --primary-color-hover: #2563eb;
+  --primary-color-soft: rgba(59, 130, 246, 0.16);
+  --primary-color-border: rgba(59, 130, 246, 0.35);
+  --input-background: #0f172a;
+  --sidebar-background: #111827;
+  --modal-background: #111827;
+  --overlay-backdrop: rgba(2, 6, 23, 0.72);
+  --invoice-paper-bg: #ffffff;
+
+  --state-error: #f87171;
+  --state-error-hover: #ef4444;
+  --state-error-soft: rgba(239, 68, 68, 0.16);
+  --state-error-border: rgba(248, 113, 113, 0.35);
+  --state-success: #4ade80;
+  --state-success-soft: rgba(34, 197, 94, 0.16);
+  --state-success-border: rgba(74, 222, 128, 0.35);
+  --state-warning: #fbbf24;
+  --state-warning-soft: rgba(245, 158, 11, 0.16);
+  --state-warning-border: rgba(251, 191, 36, 0.35);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
