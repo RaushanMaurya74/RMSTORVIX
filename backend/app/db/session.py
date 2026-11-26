@@ -45,7 +45,15 @@ def classify_db_error(exc: Exception, *, settings: Settings | None = None) -> st
             "Add Supabase Transaction Pooler URI (:6543) to environment variables and redeploy."
         )
     if "password authentication failed" in raw_msg or "authentication failed" in raw_msg:
-        return "PostgreSQL authentication failed. Verify the username and password in DATABASE_URL."
+        return (
+            "PostgreSQL authentication failed (wrong password or username mismatch, not a network/SSL/driver issue). "
+            "Verify the Supabase database password in DATABASE_URL (URL-encode special characters like @, #, %, /, or remove any [ ] brackets)."
+        )
+    if "tenant or user not found" in raw_msg:
+        return (
+            "PostgreSQL connection configuration error: Supabase Pooler rejected the tenant/username. "
+            "Use the exact Supabase Pooler username format (postgres.<project-ref>)."
+        )
     if "ssl" in raw_msg and ("error" in raw_msg or "required" in raw_msg or "certificate" in raw_msg):
         return "PostgreSQL SSL connection failed. Ensure sslmode=require is enabled for Supabase."
     if (

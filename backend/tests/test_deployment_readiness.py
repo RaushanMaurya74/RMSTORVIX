@@ -249,6 +249,35 @@ def test_database_url_unescaped_special_chars_and_discrete_pg_fields(monkeypatch
     auth_msg = classify_db_error(Exception("password authentication failed for user postgres"), settings=pg_cfg)
     assert "authentication failed" in auth_msg.lower()
 
+    tenant_msg = classify_db_error(Exception("FATAL: Tenant or user not found"), settings=pg_cfg)
+    assert "postgres.<project-ref>" in tenant_msg
+
+
+def test_supabase_pooler_url_encoded_password_and_exact_username_preserved() -> None:
+    """Preserves postgres.<ref> username verbatim, decodes URL-encoded passwords once, and uses psycopg3 on :6543."""
+    from sqlalchemy.engine import make_url
+
+    encoded_pw_url = (
+        "postgresql://postgres.ondxlqfdotzlerpfqjxc:p%40ss%23w0rd%25%2B%2F"
+        "@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    )
+    cfg = Settings(app_env="production", database_url=encoded_pw_url)
+    built_url = make_url(cfg.build_sqlalchemy_url())
+
+    assert built_url.drivername == "postgresql+psycopg"
+    assert built_url.username == "postgres.ondxlqfdotzlerpfqjxc"
+    assert built_url.password == "p@ss#w0rd%+/"
+    assert built_url.host == "aws-0-ap-northeast-1.pooler.supabase.com"
+    assert built_url.port == 6543
+    assert built_url.database == "postgres"
+    assert "p%40ss" not in cfg.safe_database_target()
+    assert "p@ss" not in cfg.safe_database_target()
+
+    engine = create_db_engine(cfg)
+    assert engine.pool.__class__.__name__ == "NullPool"
+    engine.dispose()
+
+
 
 
 
