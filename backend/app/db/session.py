@@ -32,9 +32,13 @@ def classify_db_error(exc: Exception, *, settings: Settings | None = None) -> st
     active_settings = settings or get_settings()
     raw_msg = redact_connection_secrets(str(exc)).lower()
 
-    if active_settings.is_serverless and not (
-        active_settings.database_url and active_settings.database_url.get_secret_value().strip()
-    ):
+    diag = active_settings.database_url_diagnostics()
+    if active_settings.is_serverless and not diag["resolved_non_empty"]:
+        if diag["database_url_env_present"] and diag["database_url_env_length"] == 0:
+            return (
+                "DATABASE_URL is present in the serverless runtime environment but its value is empty (length=0). "
+                "Update DATABASE_URL in Vercel Environment Variables with your Supabase Transaction Pooler URI (:6543) and redeploy."
+            )
         return (
             "DATABASE_URL environment variable is not set in the serverless runtime. "
             "Add Supabase Transaction Pooler URI (:6543) to environment variables and redeploy."
@@ -177,17 +181,19 @@ def check_database_connection(
         return True, latency_ms, "Database connection verified."
     except SQLAlchemyError as exc:
         logger.error(
-            "Database health check failed (%s) target=%s: %s",
+            "Database health check failed (%s) target=%s diag=%s: %s",
             type(exc).__name__,
             active_settings.safe_database_target(),
+            active_settings.database_url_diagnostics(),
             redact_connection_secrets(str(exc)),
         )
         return False, None, classify_db_error(exc, settings=active_settings)
     except Exception as exc:
         logger.error(
-            "Database configuration/connectivity error (%s) target=%s: %s",
+            "Database configuration/connectivity error (%s) target=%s diag=%s: %s",
             type(exc).__name__,
             active_settings.safe_database_target(),
+            active_settings.database_url_diagnostics(),
             redact_connection_secrets(str(exc)),
         )
         return False, None, classify_db_error(exc, settings=active_settings)

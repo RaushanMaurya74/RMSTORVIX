@@ -213,12 +213,57 @@ class Settings(BaseSettings):
         """Resolve the managed business logo storage directory."""
         return self._resolve_storage_path(self.storage_logo_dir)
 
-    def build_sqlalchemy_url(self) -> URL | str:
-        """Return the SQLAlchemy connection URL without storing plaintext secrets in logs."""
+    def resolved_database_url_entry(self) -> tuple[str, str]:
+        """Return `(source_env_name, raw_url)` checking DATABASE_URL and standard hosting aliases."""
         if self.database_url is not None:
             raw_url = self.database_url.get_secret_value().strip()
             if raw_url:
-                return _normalize_sqlalchemy_postgres_url(raw_url)
+                return ("DATABASE_URL", raw_url)
+
+        for alias in (
+            "POSTGRES_URL",
+            "POSTGRES_PRISMA_URL",
+            "POSTGRES_URL_NON_POOLING",
+            "SUPABASE_DB_URL",
+            "SUPABASE_DATABASE_URL",
+        ):
+            alias_val = os.environ.get(alias, "").strip()
+            if alias_val:
+                return (alias, alias_val)
+
+        return ("", "")
+
+    def database_url_diagnostics(self) -> dict[str, object]:
+        """Return non-secret presence and length telemetry for runtime database env diagnostics."""
+        env_raw = os.environ.get("DATABASE_URL")
+        pydantic_raw = self.database_url.get_secret_value() if self.database_url is not None else None
+        source, resolved = self.resolved_database_url_entry()
+        present_aliases = [
+            alias
+            for alias in (
+                "POSTGRES_URL",
+                "POSTGRES_PRISMA_URL",
+                "POSTGRES_URL_NON_POOLING",
+                "SUPABASE_DB_URL",
+                "SUPABASE_DATABASE_URL",
+            )
+            if alias in os.environ
+        ]
+        return {
+            "database_url_env_present": env_raw is not None,
+            "database_url_env_length": len(env_raw.strip()) if env_raw is not None else 0,
+            "settings_database_url_present": pydantic_raw is not None,
+            "settings_database_url_length": len(pydantic_raw.strip()) if pydantic_raw is not None else 0,
+            "resolved_source": source or None,
+            "resolved_non_empty": bool(resolved),
+            "present_aliases": present_aliases,
+        }
+
+    def build_sqlalchemy_url(self) -> URL | str:
+        """Return the SQLAlchemy connection URL without storing plaintext secrets in logs."""
+        _, raw_url = self.resolved_database_url_entry()
+        if raw_url:
+            return _normalize_sqlalchemy_postgres_url(raw_url)
 
         return URL.create(
             drivername="postgresql+psycopg",

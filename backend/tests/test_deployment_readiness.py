@@ -192,3 +192,28 @@ def test_database_url_normalization_and_secret_redaction() -> None:
     assert "authentication failed" in msg.lower()
 
 
+def test_postgres_url_alias_fallback_and_non_secret_diagnostics(monkeypatch) -> None:
+    """Supports POSTGRES_URL/SUPABASE_DB_URL fallbacks and reports non-empty diagnostics without secrets."""
+    from app.db.session import classify_db_error
+
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("POSTGRES_URL", "postgres://postgres.abc:AliasSecret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres")
+
+    cfg = Settings(database_url=None)
+    assert str(cfg.build_sqlalchemy_url()).startswith("postgresql+psycopg://")
+    diag = cfg.database_url_diagnostics()
+    assert diag["database_url_env_present"] is True
+    assert diag["database_url_env_length"] == 0
+    assert diag["resolved_source"] == "POSTGRES_URL"
+    assert diag["resolved_non_empty"] is True
+    assert "AliasSecret" not in str(diag)
+    assert "AliasSecret" not in cfg.safe_database_target()
+
+    monkeypatch.delenv("POSTGRES_URL")
+    empty_cfg = Settings(database_url=None)
+    empty_msg = classify_db_error(Exception("connection refused"), settings=empty_cfg)
+    assert "length=0" in empty_msg
+
+
+
