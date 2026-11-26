@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 import json
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, status
@@ -16,9 +17,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.health import router as health_router
 from app.api.router import api_router
 from app.core.config import PROJECT_ROOT, Settings, get_settings
-from app.db.session import get_session_factory, reset_db_engine
+from app.db.session import (
+    classify_db_error,
+    get_session_factory,
+    redact_connection_secrets,
+    reset_db_engine,
+)
 from scripts.seed_admin import ensure_initial_admin
 
+logger = logging.getLogger("app.main")
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
@@ -41,9 +48,13 @@ async def lifespan(_: FastAPI):
         with session_factory() as db:
             if inspect(db.get_bind()).has_table("admin_users"):
                 ensure_initial_admin(db, settings)
-    except Exception:
-        # Startup should stay resilient when DB is temporarily unreachable; /health reports status.
-        pass
+    except Exception as exc:
+        # Startup stays resilient when DB is temporarily unreachable; /health reports details.
+        logger.warning(
+            "Startup admin check skipped (%s): %s",
+            type(exc).__name__,
+            redact_connection_secrets(str(exc)),
+        )
     yield
     reset_db_engine()
 
@@ -128,13 +139,20 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(SQLAlchemyError)
-    async def database_exception_handler(_: Request, __: SQLAlchemyError) -> JSONResponse:
+    async def database_exception_handler(_: Request, exc: SQLAlchemyError) -> JSONResponse:
+        active_settings = get_settings()
+        logger.error(
+            "Database request failed (%s) target=%s: %s",
+            type(exc).__name__,
+            active_settings.safe_database_target(),
+            redact_connection_secrets(str(exc)),
+        )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "error": {
                     "code": "database_unavailable",
-                    "message": "Database connection is temporarily unavailable. Check DATABASE_URL configuration and try again.",
+                    "message": classify_db_error(exc, settings=active_settings),
                 }
             },
         )

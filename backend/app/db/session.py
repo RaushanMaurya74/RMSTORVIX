@@ -1,6 +1,8 @@
 """SQLAlchemy 2.x database engine, serverless pooling, and session dependency."""
 
 from collections.abc import Generator
+import logging
+import re
 import time
 from typing import Any
 
@@ -12,9 +14,53 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings, get_settings
 
+logger = logging.getLogger("app.db.session")
+_CREDENTIAL_URI_RE = re.compile(r"([a-zA-Z0-9+_-]+://)([^:@/\s]+):([^@/\s]+)@")
+
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy ORM models."""
+
+
+def redact_connection_secrets(raw_text: str) -> str:
+    """Strip any embedded credentials from exception strings before logging."""
+    return _CREDENTIAL_URI_RE.sub(r"\1***:***@", raw_text or "")
+
+
+def classify_db_error(exc: Exception, *, settings: Settings | None = None) -> str:
+    """Translate low-level driver exceptions into safe, actionable diagnostic messages."""
+    active_settings = settings or get_settings()
+    raw_msg = redact_connection_secrets(str(exc)).lower()
+
+    if active_settings.is_serverless and not (
+        active_settings.database_url and active_settings.database_url.get_secret_value().strip()
+    ):
+        return (
+            "DATABASE_URL environment variable is not set in the serverless runtime. "
+            "Add Supabase Transaction Pooler URI (:6543) to environment variables and redeploy."
+        )
+    if "password authentication failed" in raw_msg or "authentication failed" in raw_msg:
+        return "PostgreSQL authentication failed. Verify the username and password in DATABASE_URL."
+    if "ssl" in raw_msg and ("error" in raw_msg or "required" in raw_msg or "certificate" in raw_msg):
+        return "PostgreSQL SSL connection failed. Ensure sslmode=require is enabled for Supabase."
+    if (
+        "could not translate host" in raw_msg
+        or "name or service not known" in raw_msg
+        or "getaddrinfo" in raw_msg
+        or "network is unreachable" in raw_msg
+        or "cannot assign requested address" in raw_msg
+    ):
+        return (
+            "Database host unreachable. On Vercel serverless, use Supabase Transaction Pooler "
+            "(host ending in .pooler.supabase.com on port 6543)."
+        )
+    if "timeout" in raw_msg or "timed out" in raw_msg:
+        return "Database connection timed out. Check Supabase Pooler port 6543 and network reachability."
+    if "connection refused" in raw_msg:
+        return "Database connection refused at the configured host/port."
+    if "database" in raw_msg and "does not exist" in raw_msg:
+        return "Target PostgreSQL database name in DATABASE_URL does not exist."
+    return "Database connection failed. Check DATABASE_URL configuration."
 
 
 def create_db_engine(settings: Settings | None = None) -> Engine:
@@ -34,14 +80,15 @@ def create_db_engine(settings: Settings | None = None) -> Engine:
             "connect_timeout": active_settings.db_connect_timeout_seconds,
         }
         host_lower = (parsed.host or "").lower()
+        is_local_host = host_lower in {"localhost", "127.0.0.1", "::1"}
         is_supabase_host = "supabase.co" in host_lower or "supabase.com" in host_lower
         is_pooler_endpoint = "pooler.supabase.com" in host_lower or parsed.port == 6543
 
-        # Enforce TLS when connecting to Supabase or explicitly configured, unless URL specifies sslmode
+        # Enforce TLS for Supabase or remote production hosts unless URL specifies sslmode
         ssl_required = (
             active_settings.db_ssl_require
             if active_settings.db_ssl_require is not None
-            else (is_supabase_host or active_settings.app_env == "production")
+            else (is_supabase_host or (active_settings.app_env == "production" and not is_local_host))
         )
         if ssl_required and "sslmode" not in parsed.query:
             connect_args["sslmode"] = "require"
@@ -115,16 +162,32 @@ def get_db() -> Generator[Session, None, None]:
         session.close()
 
 
-def check_database_connection(engine: Engine | None = None) -> tuple[bool, float | None, str]:
-    """Execute a lightweight SELECT 1 check without exposing credentials or stack traces."""
-    target_engine = engine or get_engine()
+def check_database_connection(
+    engine: Engine | None = None,
+    settings: Settings | None = None,
+) -> tuple[bool, float | None, str]:
+    """Execute a lightweight SELECT 1 check, logging sanitized diagnostics without secrets."""
+    active_settings = settings or get_settings()
     started = time.perf_counter()
     try:
+        target_engine = engine or get_engine()
         with target_engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         latency_ms = round((time.perf_counter() - started) * 1000, 2)
         return True, latency_ms, "Database connection verified."
-    except SQLAlchemyError:
-        return False, None, "Database connection failed."
-    except Exception:
-        return False, None, "Database connectivity check encountered an unexpected error."
+    except SQLAlchemyError as exc:
+        logger.error(
+            "Database health check failed (%s) target=%s: %s",
+            type(exc).__name__,
+            active_settings.safe_database_target(),
+            redact_connection_secrets(str(exc)),
+        )
+        return False, None, classify_db_error(exc, settings=active_settings)
+    except Exception as exc:
+        logger.error(
+            "Database configuration/connectivity error (%s) target=%s: %s",
+            type(exc).__name__,
+            active_settings.safe_database_target(),
+            redact_connection_secrets(str(exc)),
+        )
+        return False, None, classify_db_error(exc, settings=active_settings)

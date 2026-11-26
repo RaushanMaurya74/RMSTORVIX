@@ -4,6 +4,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import Field, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,14 +12,27 @@ from sqlalchemy.engine import URL, make_url
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
+_UNSUPPORTED_PSYCOPG_QUERY_KEYS = {"pgbouncer", "connection_limit", "schema"}
+
 
 def _normalize_sqlalchemy_postgres_url(raw_url: str) -> str:
-    """Normalize postgres:// or postgresql:// URLs to use psycopg3 dialect cleanly."""
-    cleaned = raw_url.strip()
+    """Normalize postgres:// or postgresql:// URLs to psycopg3 and strip non-libpq params."""
+    cleaned = raw_url.strip().strip('"').strip("'").strip()
     if cleaned.startswith("postgres://"):
-        return "postgresql+psycopg://" + cleaned[len("postgres://") :]
-    if cleaned.startswith("postgresql://"):
-        return "postgresql+psycopg://" + cleaned[len("postgresql://") :]
+        cleaned = "postgresql+psycopg://" + cleaned[len("postgres://") :]
+    elif cleaned.startswith("postgresql://"):
+        cleaned = "postgresql+psycopg://" + cleaned[len("postgresql://") :]
+
+    if "?" in cleaned:
+        parts = urlsplit(cleaned)
+        kept_params = [
+            (k, v)
+            for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k.lower() not in _UNSUPPORTED_PSYCOPG_QUERY_KEYS
+        ]
+        cleaned = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(kept_params), parts.fragment)
+        )
     return cleaned
 
 
@@ -218,7 +232,10 @@ class Settings(BaseSettings):
     def safe_database_target(self) -> str:
         """Return a sanitized host/port/database label with credentials removed."""
         raw_or_url = self.build_sqlalchemy_url()
-        parsed = make_url(raw_or_url)
+        try:
+            parsed = make_url(raw_or_url)
+        except Exception:
+            return "postgresql+psycopg://invalid_url_format"
         driver = parsed.drivername
         if parsed.host or parsed.database:
             host = parsed.host or "localhost"

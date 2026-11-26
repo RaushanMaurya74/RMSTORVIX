@@ -169,3 +169,26 @@ def test_support_endpoint_falls_back_gracefully_when_db_unavailable(client: Test
     assert "support_email" in data
     assert "support_phone" in data
 
+
+def test_database_url_normalization_and_secret_redaction() -> None:
+    """Strips quotes and unsupported query params, and redacts credentials from diagnostic logs."""
+    from app.db.session import classify_db_error, redact_connection_secrets
+
+    cfg = Settings(
+        database_url='"postgres://postgres.xyz:SuperSecret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require"',
+    )
+    url = str(cfg.build_sqlalchemy_url())
+    assert url.startswith("postgresql+psycopg://")
+    assert "pgbouncer" not in url
+    assert "sslmode=require" in url
+    assert "SuperSecret" not in cfg.safe_database_target()
+
+    leaked = "psycopg error on postgresql+psycopg://postgres.xyz:SuperSecret@host:6543/postgres"
+    redacted = redact_connection_secrets(leaked)
+    assert "SuperSecret" not in redacted
+    assert "***:***" in redacted
+
+    msg = classify_db_error(Exception("password authentication failed for user postgres"), settings=cfg)
+    assert "authentication failed" in msg.lower()
+
+
