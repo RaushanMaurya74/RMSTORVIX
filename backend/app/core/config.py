@@ -4,7 +4,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 from typing import Literal
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from pydantic import Field, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +22,38 @@ def _normalize_sqlalchemy_postgres_url(raw_url: str) -> str:
         cleaned = "postgresql+psycopg://" + cleaned[len("postgres://") :]
     elif cleaned.startswith("postgresql://"):
         cleaned = "postgresql+psycopg://" + cleaned[len("postgresql://") :]
+
+    scheme, sep, rest = cleaned.partition("://")
+    if sep and "@" in rest:
+        userinfo, _, host_path_query = rest.rpartition("@")
+        if any(ch in userinfo for ch in ("@", "#", "?", "/", "[", "]")):
+            username, psep, password = userinfo.partition(":")
+            host_and_path, qsep, raw_query = host_path_query.partition("?")
+            host_port, _, db_path = host_and_path.partition("/")
+            if ":" in host_port and not host_port.startswith("["):
+                host_only, _, port_str = host_port.rpartition(":")
+                port_val = int(port_str) if port_str.isdigit() else None
+            else:
+                host_only = host_port
+                port_val = None
+            kept_query = (
+                {
+                    k: v
+                    for k, v in parse_qsl(raw_query, keep_blank_values=True)
+                    if k.lower() not in _UNSUPPORTED_PSYCOPG_QUERY_KEYS
+                }
+                if qsep
+                else {}
+            )
+            return URL.create(
+                drivername=scheme,
+                username=unquote(username),
+                password=password if psep else None,
+                host=host_only,
+                port=port_val,
+                database=db_path or None,
+                query=kept_query,
+            ).render_as_string(hide_password=False)
 
     if "?" in cleaned:
         parts = urlsplit(cleaned)
@@ -283,7 +315,7 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://invalid_url_format"
         driver = parsed.drivername
         if parsed.host or parsed.database:
-            host = parsed.host or "localhost"
+            host = (parsed.host or "localhost").rsplit("@", 1)[-1]
             port_part = f":{parsed.port}" if parsed.port else ""
             db_part = f"/{parsed.database}" if parsed.database else ""
             return f"{driver}://{host}{port_part}{db_part}"

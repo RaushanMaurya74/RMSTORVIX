@@ -33,7 +33,8 @@ def classify_db_error(exc: Exception, *, settings: Settings | None = None) -> st
     raw_msg = redact_connection_secrets(str(exc)).lower()
 
     diag = active_settings.database_url_diagnostics()
-    if active_settings.is_serverless and not diag["resolved_non_empty"]:
+    has_non_local_pg_host = active_settings.postgres_host not in {"", "localhost", "127.0.0.1", "::1"}
+    if active_settings.is_serverless and not diag["resolved_non_empty"] and not has_non_local_pg_host:
         if diag["database_url_env_present"] and diag["database_url_env_length"] == 0:
             return (
                 "DATABASE_URL is present in the serverless runtime environment but its value is empty (length=0). "

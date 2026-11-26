@@ -216,4 +216,39 @@ def test_postgres_url_alias_fallback_and_non_secret_diagnostics(monkeypatch) -> 
     assert "length=0" in empty_msg
 
 
+def test_database_url_unescaped_special_chars_and_discrete_pg_fields(monkeypatch) -> None:
+    """Safely encodes unescaped @/# in DATABASE_URL passwords without leaking fragments, and supports POSTGRES_* fields."""
+    from sqlalchemy.engine import make_url
+    from app.db.session import classify_db_error
+
+    raw = "postgresql://postgres.ondxlqfdotzlerpfqjxc:p@ss#word@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require"
+    cfg = Settings(database_url=raw)
+    built = make_url(cfg.build_sqlalchemy_url())
+    assert built.username == "postgres.ondxlqfdotzlerpfqjxc"
+    assert built.password == "p@ss#word"
+    assert built.host == "aws-0-ap-northeast-1.pooler.supabase.com"
+    assert built.port == 6543
+    assert built.database == "postgres"
+    assert "pgbouncer" not in dict(built.query)
+    assert dict(built.query).get("sslmode") == "require"
+    assert "p@ss" not in cfg.safe_database_target()
+    assert "#word" not in cfg.safe_database_target()
+
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("DATABASE_URL", "")
+    pg_cfg = Settings(
+        database_url=None,
+        postgres_host="aws-0-ap-northeast-1.pooler.supabase.com",
+        postgres_port=6543,
+        postgres_db="postgres",
+        postgres_user="postgres.ondxlqfdotzlerpfqjxc",
+        postgres_password="raw@password#1",
+    )
+    pg_url = pg_cfg.build_sqlalchemy_url()
+    assert pg_url.host == "aws-0-ap-northeast-1.pooler.supabase.com"
+    auth_msg = classify_db_error(Exception("password authentication failed for user postgres"), settings=pg_cfg)
+    assert "authentication failed" in auth_msg.lower()
+
+
+
 
