@@ -45,6 +45,16 @@ def classify_db_error(exc: Exception, *, settings: Settings | None = None) -> st
             "Add Supabase Transaction Pooler URI (:6543) to environment variables and redeploy."
         )
     if "password authentication failed" in raw_msg or "authentication failed" in raw_msg:
+        if diag.get("password_looks_like_placeholder"):
+            return (
+                "PostgreSQL authentication failed: DATABASE_URL still contains placeholder text instead of your real Supabase password. "
+                "Replace the placeholder with your actual Supabase database password and redeploy."
+            )
+        if diag.get("password_wrapped_in_brackets"):
+            return (
+                "PostgreSQL authentication failed: DATABASE_URL password is wrapped in literal [ ] brackets. "
+                "Remove the [ and ] brackets around the password and redeploy."
+            )
         return (
             "PostgreSQL authentication failed (wrong password or username mismatch, not a network/SSL/driver issue). "
             "Verify the Supabase database password in DATABASE_URL (URL-encode special characters like @, #, %, /, or remove any [ ] brackets)."

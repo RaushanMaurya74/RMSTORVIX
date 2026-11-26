@@ -281,6 +281,15 @@ class Settings(BaseSettings):
             )
             if alias in os.environ
         ]
+        built_url = None
+        try:
+            built_url = make_url(self.build_sqlalchemy_url())
+        except Exception:
+            built_url = None
+
+        parsed_username = built_url.username if built_url is not None else None
+        parsed_password = built_url.password if built_url is not None else None
+        pw_lower = (parsed_password or "").lower()
         return {
             "database_url_env_present": env_raw is not None,
             "database_url_env_length": len(env_raw.strip()) if env_raw is not None else 0,
@@ -289,6 +298,20 @@ class Settings(BaseSettings):
             "resolved_source": source or None,
             "resolved_non_empty": bool(resolved),
             "present_aliases": present_aliases,
+            "username_has_project_ref": bool(parsed_username and "." in parsed_username),
+            "password_non_empty": bool(parsed_password),
+            "password_wrapped_in_brackets": bool(
+                parsed_password and parsed_password.startswith("[") and parsed_password.endswith("]")
+            ),
+            "password_looks_like_placeholder": bool(
+                parsed_password
+                and (
+                    "your-password" in pw_lower
+                    or "your_password" in pw_lower
+                    or "your_new_password" in pw_lower
+                    or "new_password_here" in pw_lower
+                )
+            ),
         }
 
     def build_sqlalchemy_url(self) -> URL | str:

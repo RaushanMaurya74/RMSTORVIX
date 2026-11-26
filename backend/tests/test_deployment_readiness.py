@@ -277,6 +277,21 @@ def test_supabase_pooler_url_encoded_password_and_exact_username_preserved() -> 
     assert engine.pool.__class__.__name__ == "NullPool"
     engine.dispose()
 
+    from app.db.session import classify_db_error
+
+    placeholder_cfg = Settings(
+        app_env="production",
+        database_url="postgresql://postgres.ondxlqfdotzlerpfqjxc:YOUR_NEW_PASSWORD@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
+    )
+    assert "placeholder" in classify_db_error(Exception("password authentication failed"), settings=placeholder_cfg).lower()
+
+    bracket_cfg = Settings(
+        app_env="production",
+        database_url="postgresql://postgres.ondxlqfdotzlerpfqjxc:[Secret123]@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
+    )
+    assert "brackets" in classify_db_error(Exception("password authentication failed"), settings=bracket_cfg).lower()
+
+
 
 
 
