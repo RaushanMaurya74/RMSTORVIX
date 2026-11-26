@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     """Typed runtime settings for FastAPI, Vercel serverless, and Supabase PostgreSQL/Storage."""
 
     model_config = SettingsConfigDict(
-        env_file=PROJECT_ROOT / ".env",
+        env_file=None if os.environ.get("VERCEL") else PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
